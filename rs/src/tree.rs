@@ -4,6 +4,14 @@ use crate::proof;
 use crate::proof::{ConsistencyProof, InclusionProof};
 use crate::Error;
 
+// Compile-time assertion: usize must be at least 64 bits.
+// Proof generation casts u64 indices to usize for slice indexing.
+// On 32-bit platforms this would silently truncate.
+const _: () = assert!(
+    size_of::<usize>() >= size_of::<u64>(),
+    "malt requires a 64-bit platform (usize must be >= 64 bits)"
+);
+
 /// Hash abstraction for the Merkle tree.
 ///
 /// Defines the three operations required by the tree. The tree is fully

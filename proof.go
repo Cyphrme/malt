@@ -39,7 +39,7 @@ func (l *Log[D]) InclusionProof(index uint64) (*InclusionProof[D], error) {
 	if index >= size {
 		return nil, fmt.Errorf("%w: index %d >= tree_size %d", ErrIndexOutOfBounds, index, size)
 	}
-	path := genPath(l.hasher, int(index), l.leaves)
+	path := genPath(l.hasher, safeIntCast(index), l.leaves)
 	return &InclusionProof[D]{
 		Index:    index,
 		TreeSize: size,
@@ -60,7 +60,7 @@ func (l *Log[D]) ConsistencyProof(oldSize uint64) (*ConsistencyProof[D], error) 
 	if oldSize == 0 || oldSize >= size {
 		return nil, fmt.Errorf("%w: old_size %d, new_size %d", ErrInvalidOldSize, oldSize, size)
 	}
-	path := subproof(l.hasher, int(oldSize), l.leaves, true)
+	path := subproof(l.hasher, safeIntCast(oldSize), l.leaves, true)
 	return &ConsistencyProof[D]{
 		OldSize: oldSize,
 		NewSize: size,
