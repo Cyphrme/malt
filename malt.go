@@ -55,10 +55,14 @@ type TreeHasher[D comparable] interface {
 //
 // The tree supports O(1) amortized appends via a frontier stack and O(1)
 // root extraction. Leaf hashes are retained for proof generation.
+//
+// Size is derived from len(leaves) — no separate counter. The formal
+// model (§3.1) defines an explicit size field on a minimal LogState that
+// carries no leaf history. This implementation extends that state with
+// a leaves slice for proof generation, making size derivable.
 type Log[D comparable] struct {
 	hasher TreeHasher[D]
 	leaves []D
-	size   uint64
 	stack  []D
 }
 
@@ -74,14 +78,18 @@ func New[D comparable](hasher TreeHasher[D]) *Log[D] {
 // in the pre-increment size.
 func (l *Log[D]) Append(data []byte) uint64 {
 	hash := l.hasher.Leaf(data)
+
+	// Compute merge count from pre-append size (equivalent to the formal
+	// model's count_trailing_ones(state.size) before state.size += 1).
+	mergeCount := countTrailingOnes(uint64(len(l.leaves)))
+
 	l.leaves = append(l.leaves, hash)
 	l.stack = append(l.stack, hash)
 
-	mergeCount := countTrailingOnes(l.size)
 	for range mergeCount {
 		// Structure-guarded: mergeCount is bounded by the number of trailing
-		// 1-bits in l.size, guaranteeing at least 2 elements on the stack.
-		// See: package doc § Panic Policy.
+		// 1-bits in the pre-append size, guaranteeing at least 2 elements
+		// on the stack. See: package doc § Panic Policy.
 		right := l.stack[len(l.stack)-1]
 		l.stack = l.stack[:len(l.stack)-1]
 		left := l.stack[len(l.stack)-1]
@@ -89,14 +97,12 @@ func (l *Log[D]) Append(data []byte) uint64 {
 		l.stack = append(l.stack, l.hasher.Node(left, right))
 	}
 
-	index := l.size
-	l.size++
-	return index
+	return uint64(len(l.leaves) - 1)
 }
 
 // Size returns the current number of leaves in the log.
 func (l *Log[D]) Size() uint64 {
-	return l.size
+	return uint64(len(l.leaves))
 }
 
 // Root returns the current root hash of the log.
@@ -104,7 +110,7 @@ func (l *Log[D]) Size() uint64 {
 // For an empty tree, returns H.Empty(). For a non-empty tree, folds the
 // frontier stack right-to-left per §3.3.
 func (l *Log[D]) Root() D {
-	if l.size == 0 {
+	if len(l.leaves) == 0 {
 		return l.hasher.Empty()
 	}
 

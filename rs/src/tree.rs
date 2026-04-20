@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use crate::proof;
 use crate::proof::{ConsistencyProof, InclusionProof};
 use crate::Error;
 
@@ -48,14 +49,16 @@ pub trait TreeHasher {
 /// operations. It supports O(1) amortized appends via a frontier stack
 /// and O(1) root extraction.
 ///
-/// Leaf hashes are retained for proof generation.
+/// Leaf hashes are retained for proof generation. Size is derived from
+/// `leaves.len()` — no separate counter. The formal model (§3.1) defines
+/// an explicit size field on a minimal `LogState` that carries no leaf
+/// history. This implementation extends that state with a leaves vec for
+/// proof generation, making size derivable.
 #[derive(Debug, Clone)]
 pub struct Log<H: TreeHasher> {
     hasher: H,
     /// Stored leaf hashes for proof generation.
     leaves: Vec<H::Digest>,
-    /// Number of leaves appended.
-    size: u64,
     /// Frontier stack: roots of complete subtrees along the right edge.
     stack: Vec<H::Digest>,
 }
@@ -66,7 +69,6 @@ impl<H: TreeHasher> Log<H> {
         Self {
             hasher,
             leaves: Vec::new(),
-            size: 0,
             stack: Vec::new(),
         }
     }
@@ -78,29 +80,32 @@ impl<H: TreeHasher> Log<H> {
     /// trailing ones in the pre-increment size.
     pub fn append(&mut self, data: &[u8]) -> u64 {
         let hash = self.hasher.leaf(data);
+
+        // Compute merge count from pre-append size (equivalent to the
+        // formal model's count_trailing_ones(state.size) before
+        // state.size += 1).
+        let merge_count = count_trailing_ones(self.leaves.len() as u64);
+
         self.leaves.push(hash.clone());
         self.stack.push(hash);
 
-        let merge_count = count_trailing_ones(self.size);
         for _ in 0..merge_count {
             // Structure-guarded: merge_count is bounded by the number of
-            // trailing 1-bits in self.size, which guarantees at least 2
-            // elements on the stack for each merge iteration.
+            // trailing 1-bits in the pre-append size, which guarantees
+            // at least 2 elements on the stack for each merge iteration.
             // See: lib.rs § Panic Policy.
             let right = self.stack.pop().expect("stack underflow in merge");
             let left = self.stack.pop().expect("stack underflow in merge");
             self.stack.push(self.hasher.node(&left, &right));
         }
 
-        let index = self.size;
-        self.size += 1;
-        index
+        (self.leaves.len() - 1) as u64
     }
 
     /// Current number of leaves in the log.
     #[must_use = "returns the current leaf count without modifying the log"]
     pub fn size(&self) -> u64 {
-        self.size
+        self.leaves.len() as u64
     }
 
     /// Current root hash of the log.
@@ -109,7 +114,7 @@ impl<H: TreeHasher> Log<H> {
     /// the frontier stack right-to-left per §3.3.
     #[must_use = "returns the root hash without modifying the log"]
     pub fn root(&self) -> H::Digest {
-        if self.size == 0 {
+        if self.leaves.is_empty() {
             return self.hasher.empty();
         }
 
@@ -120,7 +125,7 @@ impl<H: TreeHasher> Log<H> {
             .rev()
             .cloned()
             .reduce(|acc, left| self.hasher.node(&left, &acc))
-            // Structure-guarded: size > 0 guarantees a non-empty stack.
+            // Structure-guarded: non-empty leaves guarantees non-empty stack.
             // See: lib.rs § Panic Policy.
             .expect("non-empty tree has non-empty stack")
     }
@@ -143,19 +148,20 @@ impl<H: TreeHasher> Log<H> {
     /// The proof demonstrates that the leaf at `index` exists in the current
     /// tree. Verify with [`verify_inclusion`](crate::verify_inclusion).
     pub fn inclusion_proof(&self, index: u64) -> Result<InclusionProof<H::Digest>, Error> {
-        if self.size == 0 {
+        let size = self.size();
+        if size == 0 {
             return Err(Error::EmptyTree);
         }
-        if index >= self.size {
+        if index >= size {
             return Err(Error::IndexOutOfBounds {
                 index,
-                tree_size: self.size,
+                tree_size: size,
             });
         }
-        let path = self.path(index as usize, &self.leaves);
+        let path = proof::gen_path(&self.hasher, index as usize, &self.leaves);
         Ok(InclusionProof {
             index,
-            tree_size: self.size,
+            tree_size: size,
             path,
         })
     }
@@ -167,91 +173,22 @@ impl<H: TreeHasher> Log<H> {
     /// the current tree. Verify with
     /// [`verify_consistency`](crate::verify_consistency).
     pub fn consistency_proof(&self, old_size: u64) -> Result<ConsistencyProof<H::Digest>, Error> {
-        if self.size == 0 {
+        let size = self.size();
+        if size == 0 {
             return Err(Error::EmptyTree);
         }
-        if old_size == 0 || old_size >= self.size {
+        if old_size == 0 || old_size >= size {
             return Err(Error::InvalidOldSize {
                 old_size,
-                new_size: self.size,
+                new_size: size,
             });
         }
-        let path = self.subproof(old_size as usize, &self.leaves, true);
+        let path = proof::gen_subproof(&self.hasher, old_size as usize, &self.leaves, true);
         Ok(ConsistencyProof {
             old_size,
-            new_size: self.size,
+            new_size: size,
             path,
         })
-    }
-
-    /// PATH algorithm for inclusion proofs (formal model §4.2).
-    ///
-    /// Recursively computes the sibling hashes from leaf `m` to the root.
-    fn path(&self, m: usize, leaves: &[H::Digest]) -> Vec<H::Digest> {
-        let n = leaves.len();
-        if n == 1 {
-            // P-BASE: single leaf, no siblings needed.
-            return Vec::new();
-        }
-        let k = largest_pow2_lt(n);
-        if m < k {
-            // P-LEFT: leaf is in the left (complete) subtree.
-            let mut result = self.path(m, &leaves[..k]);
-            result.push(mth(&self.hasher, &leaves[k..]));
-            result
-        } else {
-            // P-RIGHT: leaf is in the right subtree.
-            let mut result = self.path(m - k, &leaves[k..]);
-            result.push(mth(&self.hasher, &leaves[..k]));
-            result
-        }
-    }
-
-    /// SUBPROOF algorithm for consistency proofs (formal model §5.2).
-    ///
-    /// Recursively computes the intermediate hashes proving that the
-    /// first `m` leaves are a prefix of the `leaves` slice.
-    fn subproof(&self, m: usize, leaves: &[H::Digest], b: bool) -> Vec<H::Digest> {
-        let n = leaves.len();
-        if m == n {
-            if b {
-                // C-SAME: old tree equals current subtree, flag is true.
-                return Vec::new();
-            } else {
-                // C-HASH: old tree equals current subtree, flag is false.
-                return vec![mth(&self.hasher, leaves)];
-            }
-        }
-        let k = largest_pow2_lt(n);
-        if m <= k {
-            // C-LEFT: old size fits within left subtree.
-            let mut result = self.subproof(m, &leaves[..k], b);
-            result.push(mth(&self.hasher, &leaves[k..]));
-            result
-        } else {
-            // C-RIGHT: old size exceeds left subtree.
-            let mut result = self.subproof(m - k, &leaves[k..], false);
-            result.push(mth(&self.hasher, &leaves[..k]));
-            result
-        }
-    }
-}
-
-/// Batch Merkle Tree Hash per formal model §2.1.
-///
-/// Computes the root hash of an ordered list of leaf hashes using the
-/// recursive definition. Used internally for proof generation and in
-/// tests for A-EQUIV verification.
-pub(crate) fn mth<H: TreeHasher>(hasher: &H, leaves: &[H::Digest]) -> H::Digest {
-    match leaves.len() {
-        0 => hasher.empty(),
-        1 => leaves[0].clone(),
-        n => {
-            let k = largest_pow2_lt(n);
-            let left = mth(hasher, &leaves[..k]);
-            let right = mth(hasher, &leaves[k..]);
-            hasher.node(&left, &right)
-        }
     }
 }
 
@@ -319,12 +256,12 @@ mod tests {
         let mut log = Log::new(SimpleHasher);
         for i in 0u64..64 {
             log.append(format!("leaf-{i}").as_bytes());
-            let expected = log.size.count_ones() as usize;
+            let expected = log.size().count_ones() as usize;
             assert_eq!(
                 log.stack_len(),
                 expected,
                 "A-STACK failed at size={}: stack_len={}, popcount={}",
-                log.size,
+                log.size(),
                 log.stack_len(),
                 expected
             );

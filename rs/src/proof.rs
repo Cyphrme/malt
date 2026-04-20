@@ -1,4 +1,99 @@
+use crate::tree::largest_pow2_lt;
 use crate::TreeHasher;
+
+// ---------------------------------------------------------------------------
+// Proof generation algorithms (free functions).
+//
+// These depend only on a hasher and a leaf slice — they are decoupled
+// from Log state.  Moved here from tree.rs to unify the proof concern
+// in a single module (generation + verification).
+// ---------------------------------------------------------------------------
+
+/// Batch Merkle Tree Hash per formal model §2.1.
+///
+/// Computes the root hash of an ordered list of leaf hashes using the
+/// recursive definition. Used internally for proof generation.
+pub(crate) fn mth<H: TreeHasher>(hasher: &H, leaves: &[H::Digest]) -> H::Digest {
+    match leaves.len() {
+        0 => hasher.empty(),
+        1 => leaves[0].clone(),
+        n => {
+            let k = largest_pow2_lt(n);
+            let left = mth(hasher, &leaves[..k]);
+            let right = mth(hasher, &leaves[k..]);
+            hasher.node(&left, &right)
+        }
+    }
+}
+
+/// PATH algorithm for inclusion proofs (formal model §4.2).
+///
+/// Recursively computes the sibling hashes from leaf `m` to the root.
+/// This is a free function — it depends only on the hasher and the leaf
+/// slice, not on `Log` state.
+pub(crate) fn gen_path<H: TreeHasher>(
+    hasher: &H,
+    m: usize,
+    leaves: &[H::Digest],
+) -> Vec<H::Digest> {
+    let n = leaves.len();
+    if n == 1 {
+        // P-BASE: single leaf, no siblings needed.
+        return Vec::new();
+    }
+    let k = largest_pow2_lt(n);
+    if m < k {
+        // P-LEFT: leaf is in the left (complete) subtree.
+        let mut result = gen_path(hasher, m, &leaves[..k]);
+        result.push(mth(hasher, &leaves[k..]));
+        result
+    } else {
+        // P-RIGHT: leaf is in the right subtree.
+        let mut result = gen_path(hasher, m - k, &leaves[k..]);
+        result.push(mth(hasher, &leaves[..k]));
+        result
+    }
+}
+
+/// SUBPROOF algorithm for consistency proofs (formal model §5.2).
+///
+/// Recursively computes the intermediate hashes proving that the first
+/// `m` leaves are a prefix of the `leaves` slice. This is a free
+/// function — it depends only on the hasher and the leaf slice, not on
+/// `Log` state.
+pub(crate) fn gen_subproof<H: TreeHasher>(
+    hasher: &H,
+    m: usize,
+    leaves: &[H::Digest],
+    b: bool,
+) -> Vec<H::Digest> {
+    let n = leaves.len();
+    if m == n {
+        if b {
+            // C-SAME: old tree equals current subtree, flag is true.
+            return Vec::new();
+        } else {
+            // C-HASH: old tree equals current subtree, flag is false.
+            return vec![mth(hasher, leaves)];
+        }
+    }
+    let k = largest_pow2_lt(n);
+    if m <= k {
+        // C-LEFT: old size fits within left subtree.
+        let mut result = gen_subproof(hasher, m, &leaves[..k], b);
+        result.push(mth(hasher, &leaves[k..]));
+        result
+    } else {
+        // C-RIGHT: old size exceeds left subtree.
+        let mut result = gen_subproof(hasher, m - k, &leaves[k..], false);
+        result.push(mth(hasher, &leaves[..k]));
+        result
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Proof types and verification (standalone — no Log needed).
+// ---------------------------------------------------------------------------
 
 /// Inclusion proof — proves a leaf at `index` exists in a tree of `tree_size`.
 ///

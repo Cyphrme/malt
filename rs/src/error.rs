@@ -1,4 +1,4 @@
-/// Errors produced by DAOLFMT operations.
+/// Errors produced by MALT operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     /// Leaf index is out of bounds for the current tree size.

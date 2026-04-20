@@ -1,4 +1,4 @@
-//! Correctness tests for DAOLFMT.
+//! Correctness tests for MALT.
 //!
 //! Tests verify the fundamental invariants from the formal model
 //! (docs/models/verifiable-log.md):

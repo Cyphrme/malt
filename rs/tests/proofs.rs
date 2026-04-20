@@ -1,4 +1,4 @@
-//! Proof tests for DAOLFMT.
+//! Proof tests for MALT.
 //!
 //! Tests verify the proof invariants from the formal model:
 //!

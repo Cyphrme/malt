@@ -32,16 +32,17 @@ type ConsistencyProof[D comparable] struct {
 // The proof demonstrates that the leaf at index exists in the current tree.
 // Verify with [VerifyInclusion].
 func (l *Log[D]) InclusionProof(index uint64) (*InclusionProof[D], error) {
-	if l.size == 0 {
+	size := l.Size()
+	if size == 0 {
 		return nil, ErrEmptyTree
 	}
-	if index >= l.size {
-		return nil, fmt.Errorf("%w: index %d >= tree_size %d", ErrIndexOutOfBounds, index, l.size)
+	if index >= size {
+		return nil, fmt.Errorf("%w: index %d >= tree_size %d", ErrIndexOutOfBounds, index, size)
 	}
-	path := l.genPath(int(index), l.leaves)
+	path := genPath(l.hasher, int(index), l.leaves)
 	return &InclusionProof[D]{
 		Index:    index,
-		TreeSize: l.size,
+		TreeSize: size,
 		Path:     path,
 	}, nil
 }
@@ -52,16 +53,17 @@ func (l *Log[D]) InclusionProof(index uint64) (*InclusionProof[D], error) {
 // The proof demonstrates that the tree at oldSize is a prefix of the
 // current tree. Verify with [VerifyConsistency].
 func (l *Log[D]) ConsistencyProof(oldSize uint64) (*ConsistencyProof[D], error) {
-	if l.size == 0 {
+	size := l.Size()
+	if size == 0 {
 		return nil, ErrEmptyTree
 	}
-	if oldSize == 0 || oldSize >= l.size {
-		return nil, fmt.Errorf("%w: old_size %d, new_size %d", ErrInvalidOldSize, oldSize, l.size)
+	if oldSize == 0 || oldSize >= size {
+		return nil, fmt.Errorf("%w: old_size %d, new_size %d", ErrInvalidOldSize, oldSize, size)
 	}
-	path := l.subproof(int(oldSize), l.leaves, true)
+	path := subproof(l.hasher, int(oldSize), l.leaves, true)
 	return &ConsistencyProof[D]{
 		OldSize: oldSize,
-		NewSize: l.size,
+		NewSize: size,
 		Path:    path,
 	}, nil
 }
@@ -69,7 +71,9 @@ func (l *Log[D]) ConsistencyProof(oldSize uint64) (*ConsistencyProof[D], error) 
 // genPath implements the PATH algorithm for inclusion proofs (§4.2).
 //
 // Recursively computes the sibling hashes from leaf m to the root.
-func (l *Log[D]) genPath(m int, leaves []D) []D {
+// This is a free function — it depends only on the hasher and the leaf
+// slice, not on Log state.
+func genPath[D comparable](hasher TreeHasher[D], m int, leaves []D) []D {
 	n := len(leaves)
 	if n == 1 {
 		// P-BASE: single leaf, no siblings needed.
@@ -78,19 +82,20 @@ func (l *Log[D]) genPath(m int, leaves []D) []D {
 	k := largestPow2LessThan(n)
 	if m < k {
 		// P-LEFT: leaf is in the left (complete) subtree.
-		result := l.genPath(m, leaves[:k])
-		return append(result, mth(l.hasher, leaves[k:]))
+		result := genPath(hasher, m, leaves[:k])
+		return append(result, mth(hasher, leaves[k:]))
 	}
 	// P-RIGHT: leaf is in the right subtree.
-	result := l.genPath(m-k, leaves[k:])
-	return append(result, mth(l.hasher, leaves[:k]))
+	result := genPath(hasher, m-k, leaves[k:])
+	return append(result, mth(hasher, leaves[:k]))
 }
 
 // subproof implements the SUBPROOF algorithm for consistency proofs (§5.2).
 //
 // Recursively computes the intermediate hashes proving that the first m
-// leaves are a prefix of the leaves slice.
-func (l *Log[D]) subproof(m int, leaves []D, b bool) []D {
+// leaves are a prefix of the leaves slice. This is a free function — it
+// depends only on the hasher and the leaf slice, not on Log state.
+func subproof[D comparable](hasher TreeHasher[D], m int, leaves []D, b bool) []D {
 	n := len(leaves)
 	if m == n {
 		if b {
@@ -98,17 +103,17 @@ func (l *Log[D]) subproof(m int, leaves []D, b bool) []D {
 			return nil
 		}
 		// C-HASH: old tree equals current subtree, flag is false.
-		return []D{mth(l.hasher, leaves)}
+		return []D{mth(hasher, leaves)}
 	}
 	k := largestPow2LessThan(n)
 	if m <= k {
 		// C-LEFT: old size fits within left subtree.
-		result := l.subproof(m, leaves[:k], b)
-		return append(result, mth(l.hasher, leaves[k:]))
+		result := subproof(hasher, m, leaves[:k], b)
+		return append(result, mth(hasher, leaves[k:]))
 	}
 	// C-RIGHT: old size exceeds left subtree.
-	result := l.subproof(m-k, leaves[k:], false)
-	return append(result, mth(l.hasher, leaves[:k]))
+	result := subproof(hasher, m-k, leaves[k:], false)
+	return append(result, mth(hasher, leaves[:k]))
 }
 
 // VerifyInclusion verifies an inclusion proof (formal model §4.3).
