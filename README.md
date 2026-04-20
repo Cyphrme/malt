@@ -4,6 +4,10 @@ A generic, zero-dependency implementation of the Merkle tree construction from
 [RFC 9162 §2.1][rfc] (Certificate Transparency v2.0). Dual implementations in
 **Go** and **Rust** with identical semantics.
 
+- **Go docs:** [pkg.go.dev/github.com/cyphrme/malt](https://pkg.go.dev/github.com/cyphrme/malt)
+- **Rust docs:** [docs.rs/malt](https://docs.rs/malt)
+- **Crate:** [crates.io/crates/malt](https://crates.io/crates/malt)
+
 ## What It Does
 
 MALT provides an append-only log backed by a dense, left-filled Merkle tree.
