@@ -1,20 +1,14 @@
 [package]
-categories = ["cryptography", "data-structures"]
-description = "Merkle Append-Only Log Tree (RFC 9162 §2.1)"
-edition = "2024"
-keywords = [
-  "merkle",
-  "certificate-transparency",
-  "append-only",
-  "log",
-  "rfc9162",
-]
-license = "MIT"
-name = "malt"
-readme = "README.md"
-repository = "https://github.com/Cyphrme/malt"
+categories   = ["cryptography", "data-structures"]
+description  = "Merkle Append-Only Log Tree (RFC 9162 §2.1)"
+edition      = "2024"
+keywords     = ["merkle", "ct-log", "append-only", "log", "rfc9162"]
+license      = "MIT"
+name         = "malt"
+readme       = "README.md"
+repository   = "https://github.com/Cyphrme/malt"
 rust-version = "1.85"
-version = "0.1.0"
+version      = "0.1.0"
 
 [dev-dependencies]
 hex        = "0.4"
