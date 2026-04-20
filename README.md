@@ -27,6 +27,9 @@ malt/
 ├── proof.go        # Inclusion & consistency proofs + verification
 ├── error.go        # Sentinel errors
 ├── malt_test.go    # Go tests
+├── parity_test.go  # Cross-language golden vector tests
+├── testdata/
+│   └── vectors.json # Shared golden test vectors
 ├── LICENSE         # MIT
 └── rs/
     ├── Cargo.toml  # Rust crate: malt
@@ -40,7 +43,8 @@ malt/
         ├── common/
         │   └── mod.rs
         ├── correctness.rs
-        └── proofs.rs
+        ├── proofs.rs
+        └── parity.rs  # Cross-language golden vector tests
 ```
 
 Go lives at the repository root for clean `go get` import paths. Rust lives in
@@ -122,8 +126,9 @@ verified by the test suites:
 - **K-SOUND** — correctly generated consistency proofs always verify.
 - **I-SIZE / K-SIZE** — proof sizes are logarithmically bounded.
 
-Both implementations share an identical FNV-1a test hasher for cross-language
-parity verification.
+Both implementations share an identical FNV-1a test hasher and assert against
+a shared set of [golden test vectors](testdata/vectors.json) — roots, inclusion
+proof paths, and consistency proof paths — ensuring cross-language parity.
 
 ## License
 
