@@ -7,14 +7,6 @@
 //
 // Zero external dependencies — callers provide their own hash implementation.
 //
-// # Platform Requirements
-//
-// Proof generation internally converts uint64 indices to int for slice
-// indexing. On platforms where int is narrower than 64 bits, trees
-// exceeding 2³¹ leaves would overflow. In practice this is not a
-// constraint — a 2³¹-leaf tree requires storing 2 GiB of digests at
-// minimum, which exceeds any 32-bit address space.
-//
 // # Panic Policy
 //
 // This package panics in two locations where the stack state is guaranteed
@@ -28,11 +20,7 @@
 // A-EQUIV). They are not input-validation panics.
 package malt
 
-import (
-	"fmt"
-	"math"
-	"math/bits"
-)
+import "math/bits"
 
 // TreeHasher defines the hash abstraction for the Merkle tree.
 //
@@ -177,15 +165,4 @@ func largestPow2LessThan(n int) int {
 // countTrailingOnes counts the trailing 1-bits in the binary representation.
 func countTrailingOnes(n uint64) int {
 	return bits.TrailingZeros64(^n)
-}
-
-// safeIntCast converts a uint64 to int, panicking if the value exceeds
-// the platform's int capacity. This guards the uint64→int narrowing cast
-// used in proof generation for slice indexing. On 64-bit platforms this
-// is effectively a no-op.
-func safeIntCast(n uint64) int {
-	if n > uint64(math.MaxInt) {
-		panic(fmt.Sprintf("malt: tree size %d exceeds platform int capacity", n))
-	}
-	return int(n)
 }

@@ -34,13 +34,6 @@
 //! These are **not** input-validation panics. They guard invariants proven
 //! correct by the formal model (§3.4 A-STACK, A-EQUIV). Converting them to
 //! `Result` would impose API ergonomic cost for genuinely impossible errors.
-//!
-//! # Platform Requirements
-//!
-//! Proof generation converts `u64` indices to `usize` for slice indexing.
-//! This crate requires a platform where `usize` is at least 64 bits wide.
-//! A compile-time assertion enforces this — the crate will not compile on
-//! 32-bit targets.
 
 mod error;
 mod proof;
