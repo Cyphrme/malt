@@ -130,4 +130,4 @@ parity verification.
 [MIT](LICENSE)
 
 [rfc]: https://www.rfc-editor.org/rfc/rfc9162#section-2.1
-[model]: https://github.com/Cyphrme/Cyphr/blob/main/docs/models/verifiable-log.md
+[model]: docs/models/verifiable-log.md
